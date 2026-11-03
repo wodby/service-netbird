@@ -1,0 +1,215 @@
+name: netbird
+icon: netbird
+type: service
+title: NetBird
+guidance: GUIDANCE.md
+# The server keeps accounts, peers and sign-in in SQLite files on one volume, and peers stay connected to one
+# management and signal process.
+scalable: false
+
+options:
+- version: '0'
+  tag: 0-r0
+  default: true
+
+labels:
+- netbird
+- vpn
+
+deployment:
+  strategy: rolling
+  shutdownGracePeriod: 30s
+
+# Two addresses: the main one serves the dashboard, the API, sign-in and the gRPC services clients use, and needs
+# HTTP/2 between the gateway and the container; the relay's address serves WebSocket, which needs HTTP/1.1. Both run
+# over HTTPS, so no TCP or UDP ports have to be published.
+endpoints:
+- name: netbird
+  main: true
+  ports:
+  - name: http
+    number: 8080
+    protocol: http
+    main: true
+    routeDefaults:
+      https_redirect: 'true'
+      # Clients keep gRPC streams open for as long as they are connected.
+      request_timeout: 0s
+      backend_request_timeout: 0s
+- name: relay
+  ports:
+  - name: relay
+    number: 8082
+    protocol: http
+    routeDefaults:
+      https_redirect: 'true'
+      # Relayed connections are long-lived WebSockets.
+      request_timeout: 0s
+      backend_request_timeout: 0s
+
+tokens:
+# Shared by the server and the relay to sign and check relay credentials.
+- name: relay-secret
+  generate:
+    regex: '[a-zA-Z0-9]{64}'
+# Encrypts sensitive data in the database. Changing it makes that data unreadable.
+- name: store-encryption-key
+  generate:
+    regex: '[a-zA-Z0-9]{64}'
+# Encrypts sign-in session cookies. Changing it signs everyone out of the dashboard.
+- name: session-cookie-key
+  generate:
+    regex: '[a-zA-Z0-9]{64}'
+
+settings:
+# The administrator the first deployment creates, so the dashboard never offers a public setup page.
+- name: admin-email
+  title: Admin email
+  description: Email address of the NetBird administrator created on the first deployment. It is the sign-in name. Changing it later has no effect; manage users in the dashboard.
+  required: true
+  var: NETBIRD_ADMIN_EMAIL
+- name: admin-password
+  title: Admin password
+  description: Password of the NetBird administrator created on the first deployment. Changing it later has no effect; change the password in the dashboard.
+  required: true
+  secret: true
+  var: NETBIRD_ADMIN_PASSWORD
+
+env:
+# Clients and the dashboard use the main address; the server gives clients the relay's address. Changing a domain asks
+# for a redeploy, and clients pick up the new addresses when they reconnect.
+- name: NETBIRD_URL
+  value: '{{service.endpoints.netbird.primaryURL}}'
+- name: NETBIRD_RELAY_URL
+  value: '{{service.endpoints.relay.primaryURL}}'
+- name: NETBIRD_AUTH_SECRET
+  value: '{{relay-secret}}'
+  secret: true
+- name: NETBIRD_STORE_ENCRYPTION_KEY
+  value: '{{store-encryption-key}}'
+  secret: true
+- name: NETBIRD_SESSION_COOKIE_ENCRYPTION_KEY
+  value: '{{session-cookie-key}}'
+  secret: true
+
+volumes:
+- name: data
+  title: Data
+  size: 1
+  helm:
+    labels: persistence.labels
+    values:
+    - name: persistence.enabled
+      value: true
+    - name: persistence.size
+      value: '{{volumes.data.size}}Gi'
+    - name: persistence.storageClass
+      value: '{{volumes.data.storageClassName}}'
+
+helm:
+  name: wodby
+  source: oci://registry-1.docker.io/wodby/stateful
+  chart: oci://registry-1.docker.io/wodby/stateful
+  version: 0.3.0
+  valueMappings:
+    replicas: replicaCount
+    serviceAccountName: serviceAccount.name
+    serviceAccountCreate: serviceAccount.create
+  values:
+  - name: containerName
+    value: netbird
+  - name: containerPorts
+    value:
+    - name: http
+      containerPort: 8080
+      protocol: TCP
+    - name: relay
+      containerPort: 8082
+      protocol: TCP
+  # The main Service carries only the main port, over cleartext HTTP/2 so gRPC works through the gateway. The relay
+  # gets its own Service, and with it its own address, over HTTP/1.1.
+  - name: service.ports
+    value:
+    - name: http
+      port: 8080
+      targetPort: http
+      appProtocol: kubernetes.io/h2c
+  - name: extraServices
+    value:
+    - name: relay
+      ports:
+      - name: relay
+        port: 8082
+        targetPort: relay
+  - name: persistence.mountPath
+    value: /var/lib/netbird
+  - name: podSecurityContext
+    value:
+      fsGroup: 1000
+      fsGroupChangePolicy: OnRootMismatch
+  - name: securityContext
+    value:
+      allowPrivilegeEscalation: false
+      capabilities:
+        drop:
+        - ALL
+      runAsGroup: 1000
+      runAsNonRoot: true
+      runAsUser: 1000
+  # The first start downloads the GeoLite databases before the server answers, which can take a few minutes.
+  - name: startupProbe
+    value:
+      httpGet:
+        path: /oauth2/.well-known/openid-configuration
+        port: http
+      failureThreshold: 90
+      periodSeconds: 5
+      timeoutSeconds: 5
+  - name: readinessProbe
+    value:
+      httpGet:
+        path: /oauth2/.well-known/openid-configuration
+        port: http
+      failureThreshold: 3
+      periodSeconds: 10
+      timeoutSeconds: 5
+  # The server and the relay stop the container when they fail, so checking nginx is enough.
+  - name: livenessProbe
+    value:
+      httpGet:
+        path: /healthz
+        port: http
+      failureThreshold: 6
+      periodSeconds: 10
+      timeoutSeconds: 5
+
+workloads:
+- name: main
+  selector:
+    matchLabels:
+      app.kubernetes.io/instance: '{{helm.release}}'
+  kind: statefulset
+  primary: true
+  helm:
+    labels: commonLabels
+    annotations: commonAnnotations
+    volumes: extraVolumes
+  containers:
+  - name: netbird
+    image: wodby/netbird
+    resources:
+      request:
+        cpu: 100
+        memory: 256
+      limit:
+        cpu: 2000
+        memory: 1024
+    helm:
+      resources: resources
+      env: envVars
+      mounts: extraVolumeMounts
+      image:
+        repository: image.repository
+        tag: image.tag
+        registry: image.registry
+        pullPolicy: image.pullPolicy
