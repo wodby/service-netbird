@@ -31,6 +31,8 @@ endpoints:
     number: 8080
     protocol: http
     main: true
+    # NetBird clients use gRPC, which needs HTTP/2 between them and the gateway.
+    http2: true
     routeDefaults:
       https_redirect: 'true'
       # Clients keep gRPC streams open for as long as they are connected.

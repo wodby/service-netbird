@@ -9,7 +9,8 @@ It uses NetBird's own binaries and dashboard, unchanged.
 The service has two HTTPS addresses, and needs no published TCP or UDP ports, so it works on every cluster:
 
 - The main domain (endpoint `netbird`) serves the dashboard, the management API, sign-in (`/oauth2`) and the gRPC
-  services that NetBird clients use. The gateway reaches it over cleartext HTTP/2, which gRPC needs.
+  services that NetBird clients use. Its port sets `http2: true`, so its HTTPS domains accept HTTP/2 from clients, and
+  the gateway reaches the container over cleartext HTTP/2; gRPC needs both.
 - The relay's domain (endpoint `relay`, technical host `relay.<service>.<environment domain>`) serves the relay over
   WebSocket. The server gives this address to clients; users never enter it.
 
