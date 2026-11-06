@@ -9,7 +9,7 @@ scalable: false
 
 options:
 - version: '0'
-  tag: 0-r0
+  tag: 0-r1
   default: true
 
 labels:
@@ -67,12 +67,16 @@ settings:
 # The administrator the first deployment creates, so the dashboard never offers a public setup page.
 - name: admin-email
   title: Admin email
-  description: Email address of the NetBird administrator created on the first deployment. It is the sign-in name. Changing it later has no effect; manage users in the dashboard.
+  description: Email address of the NetBird administrator created on the first 
+    deployment. It is the sign-in name. Changing it later has no effect; manage 
+    users in the dashboard.
   required: true
   var: NETBIRD_ADMIN_EMAIL
 - name: admin-password
   title: Admin password
-  description: Password of the NetBird administrator created on the first deployment. Changing it later has no effect; change the password in the dashboard.
+  description: Password of the NetBird administrator created on the first 
+    deployment. Changing it later has no effect; change the password in the 
+    dashboard.
   required: true
   secret: true
   var: NETBIRD_ADMIN_PASSWORD
