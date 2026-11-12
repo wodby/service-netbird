@@ -9,7 +9,7 @@ scalable: false
 
 options:
 - version: '0'
-  tag: 0-r2
+  tag: 0-r3
   default: true
 
 labels:
