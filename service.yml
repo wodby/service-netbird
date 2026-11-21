@@ -9,8 +9,8 @@ scalable: false
 
 options:
 - version: '0'
-  tag: 0-r5
-  digest: sha256:04cb955546b27278945289b35b577e05e46940bc046a2e290878cd740fc58b6b
+  tag: 0-r6
+  digest: sha256:4026a675d5cd8e1e1939473ac2f42bb9554b29da5cc083f7541b23dd8bed1b45
   default: true
 
 labels:
